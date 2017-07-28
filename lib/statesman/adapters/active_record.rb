@@ -72,8 +72,8 @@ module Statesman
 
         ::ActiveRecord::Base.transaction do
           @observer.execute(:before, from, to, transition)
-          unset_old_most_recent
           transition.save!
+          unset_old_most_recent(transition.id)
           @last_transition = transition
           @observer.execute(:after, from, to, transition)
         end
@@ -86,7 +86,7 @@ module Statesman
         @parent_model.send(@association_name)
       end
 
-      def unset_old_most_recent
+      def unset_old_most_recent(except_id = nil)
         # Check whether the `most_recent` column allows null values. If it
         # doesn't, set old records to `false`, otherwise, set them to `NULL`.
         #
@@ -95,10 +95,14 @@ module Statesman
         # rather than Rails' opinion of whether the database supports partial
         # indexes, we're robust to DBs later adding support for partial indexes.
         if transition_class.columns_hash['most_recent'].null == false
-          transitions_for_parent.update_all(most_recent: false)
+          fields = { most_recent: false }
         else
-          transitions_for_parent.update_all(most_recent: nil)
+          fields = { most_recent: nil }
         end
+
+        query = transitions_for_parent
+        query = query.where.not(id: except_id) if except_id.present?
+        query.update_all(fields)
       end
 
       def next_sort_key
